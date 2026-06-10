@@ -478,7 +478,66 @@ async def cb_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=_back_kb())
 
 
-# ── app builder ───────────────────────────────────────────────────────────────
+
+
+async def cmd_gainers(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("📈 Fetching top gainers...")
+    tokens = await get_top_gainers()
+    if not tokens:
+        await msg.edit_text("❌ Could not fetch gainers right now.")
+        return
+    lines = [f"📈 *Top Gainers — Solana DEX*\n", DIV]
+    for t in tokens[:12]:
+        chg = t.price_change_1h
+        arrow = "▲" if chg >= 0 else "▼"
+        color = "🟢" if chg >= 0 else "🔴"
+        lines.append(f"{color} *${t.symbol}*  {arrow} `{abs(chg):.1f}%` 1h  |  Liq {_fmt_usd(t.liquidity_usd)}")
+        lines.append(f"  `{t.ca[:8]}...{t.ca[-4:]}`  [{t.dex.upper()}]({t.pair_url})")
+    await msg.edit_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
+
+async def cmd_newpairs(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = await update.message.reply_text("🆕 Fetching newest pairs...")
+    tokens = await get_new_pairs()
+    if not tokens:
+        await msg.edit_text("❌ Could not fetch new pairs right now.")
+        return
+    lines = [f"🆕 *New Pairs — Solana DEX*\n", DIV]
+    for t in tokens[:12]:
+        chg = t.price_change_1h
+        chg_str = f"{'▲' if chg >= 0 else '▼'}{abs(chg):.1f}%"
+        lines.append(f"• *${t.symbol}*  `{chg_str}` 1h  |  Liq {_fmt_usd(t.liquidity_usd)}")
+        lines.append(f"  `{t.ca[:8]}...{t.ca[-4:]}`  [{t.dex.upper()}]({t.pair_url})")
+    await msg.edit_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+
+
+async def cmd_wallet(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    wallet = _wallet_info(ctx)
+    if not wallet:
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚡ Generate New Wallet", callback_data="wallet_gen")],
+            [InlineKeyboardButton("« Back", callback_data="home")],
+        ])
+        await update.message.reply_text(
+            "💼 *Wallet*\n\n" + DIV + "\nNo wallet connected.\n\nGenerate a new Solana wallet below.\n" + DIV,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb,
+        )
+    else:
+        addr = wallet["address"]
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("👁 Show Private Key", callback_data="wallet_pk"),
+                InlineKeyboardButton("🔄 New Wallet", callback_data="wallet_gen"),
+            ],
+            [InlineKeyboardButton("« Back", callback_data="home")],
+        ])
+        await update.message.reply_text(
+            f"💼 *My Wallet*\n\n" + DIV + f"\n🔑 Address:\n`{addr}`\n" + DIV,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb,
+        )
+
 
 def build_app() -> Application:
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -493,6 +552,9 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("score", cmd_score))
     app.add_handler(CommandHandler("top", cmd_top))
+    app.add_handler(CommandHandler("gainers", cmd_gainers))
+    app.add_handler(CommandHandler("newpairs", cmd_newpairs))
+    app.add_handler(CommandHandler("wallet", cmd_wallet))
     app.add_handler(conv)
 
     app.add_handler(CallbackQueryHandler(cb_home, pattern="^home$"))
@@ -509,9 +571,20 @@ def build_app() -> Application:
     return app
 
 
+_BOT_COMMANDS = [
+    ("start",    "Your Gryptz AI Scanner dashboard"),
+    ("score",    "Score any Solana token — /score <CA>"),
+    ("top",      "Top signals from last scan"),
+    ("gainers",  "Top gainers on Solana DEX right now"),
+    ("newpairs", "Newest pairs listed on Solana DEX"),
+    ("wallet",   "Manage your Solana wallet"),
+]
+
+
 async def run_bot() -> None:
     app = build_app()
     await app.initialize()
+    await app.bot.set_my_commands(_BOT_COMMANDS)
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     log.info("Gryptz bot running")
