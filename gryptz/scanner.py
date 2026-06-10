@@ -146,5 +146,71 @@ async def scan_trending() -> list[TokenData]:
     return filter_tokens(raw)
 
 
+def _get_new_pairs_solana() -> list[TokenData]:
+    try:
+        resp = requests.get(
+            f"{DEXSCREENER_BASE}/token-pairs/v1/solana",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        pairs = data if isinstance(data, list) else data.get("pairs", [])
+        tokens: list[TokenData] = []
+        seen: set[str] = set()
+        for p in (pairs or [])[:40]:
+            tok = _parse_pair(p)
+            if tok and tok.ca and tok.ca not in seen:
+                seen.add(tok.ca)
+                tokens.append(tok)
+        return sorted(tokens, key=lambda t: t.created_at or "0", reverse=True)[:20]
+    except Exception as e:
+        log.warning("DexScreener new pairs failed: %s", e)
+        return []
+
+
+def _get_boosted_solana() -> list[TokenData]:
+    try:
+        resp = requests.get(
+            f"{DEXSCREENER_BASE}/token-boosts/top/v1",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        profiles = resp.json()
+        sol_cas = [
+            p["tokenAddress"]
+            for p in (profiles or [])
+            if p.get("chainId") == "solana" and p.get("tokenAddress")
+        ][:20]
+        if not sol_cas:
+            return []
+        batch = ",".join(sol_cas)
+        resp2 = requests.get(
+            f"{DEXSCREENER_BASE}/tokens/v1/solana/{batch}", timeout=15
+        )
+        resp2.raise_for_status()
+        pairs = resp2.json()
+        if isinstance(pairs, dict):
+            pairs = pairs.get("pairs", [])
+        tokens: list[TokenData] = []
+        seen: set[str] = set()
+        for p in (pairs or []):
+            tok = _parse_pair(p)
+            if tok and tok.ca and tok.ca not in seen:
+                seen.add(tok.ca)
+                tokens.append(tok)
+        return sorted(tokens, key=lambda t: t.price_change_1h, reverse=True)
+    except Exception as e:
+        log.warning("DexScreener boosted fetch failed: %s", e)
+        return []
+
+
 async def get_token(ca: str) -> Optional[TokenData]:
     return await asyncio.to_thread(_get_token_by_ca, ca)
+
+
+async def get_new_pairs() -> list[TokenData]:
+    return await asyncio.to_thread(_get_new_pairs_solana)
+
+
+async def get_top_gainers() -> list[TokenData]:
+    return await asyncio.to_thread(_get_boosted_solana)
