@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "gryptz"
+version = "0.1.0"
+description = "AI-powered Solana DEX token scanner with Telegram alerts"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "python-telegram-bot==21.6",
+    "requests==2.32.3",
+    "python-dotenv==1.0.1",
+]
+
+[project.scripts]
+gryptz = "main:main"
+
+[tool.setuptools.packages.find]
+include = ["gryptz*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
